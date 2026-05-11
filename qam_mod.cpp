@@ -7,159 +7,6 @@
 #include <fstream>
 #include <cmath>
 
-#include <GL/glew.h>
-#include <SDL2/SDL.h>
-#include "third_party/implot/implot.h"
-#include "third_party/imgui/backends/imgui_impl_sdl2.h"
-#include "third_party/imgui/backends/imgui_impl_opengl3.h"
-#include "third_party/imgui/imgui.h"
-
-                 
-
-void run_gui(const std::vector<std::complex<float>>& symbols,const std::vector<std::vector<std::complex<float>>>& all_awgn, 
-            const std::vector<float>& dispers,const std::vector<float>& ber,int type_QAM)
-{
-    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER);
-    SDL_DisplayMode dm;
-    SDL_GetCurrentDisplayMode(0, &dm);
-    SDL_Window* win = SDL_CreateWindow("QAM Simulation", 0, 0, dm.w, dm.h,
-                                       SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN_DESKTOP);
-    if (!win) return;
-    SDL_GLContext gl = SDL_GL_CreateContext(win);
-    ImGui::CreateContext();
-    ImPlot::CreateContext();
-    ImGui::StyleColorsDark();
-    ImGui_ImplSDL2_InitForOpenGL(win, gl);
-    ImGui_ImplOpenGL3_Init("#version 330");
-
-    std::vector<float> xs_orig(symbols.size()), ys_orig(symbols.size());
-    for (size_t i = 0; i < symbols.size(); ++i) {
-        xs_orig[i] = symbols[i].real();
-        ys_orig[i] = symbols[i].imag();
-    }
-
-    int disp_idx = 0;
-    bool running = true;
-    std::vector<float> xs_noisy, ys_noisy;
-    {
-        const auto& noisy = all_awgn[disp_idx];
-        xs_noisy.assign(noisy.size(), 0);
-        ys_noisy.assign(noisy.size(), 0);
-        for (size_t i = 0; i < noisy.size(); ++i) {
-            xs_noisy[i] = noisy[i].real();
-            ys_noisy[i] = noisy[i].imag();
-        }
-    }
-    while (running) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            ImGui_ImplSDL2_ProcessEvent(&e);
-            if (e.type == SDL_QUIT || (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE))
-                running = false;
-        }
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
-        ImGui::NewFrame();
-
-        ImGui::SetNextWindowPos(ImVec2(0,0));
-        ImGui::SetNextWindowSize(ImVec2(dm.w, dm.h));
-        ImGui::Begin("##Main", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-
-        ImGui::BeginChild("Info", ImVec2(0, 50), true);
-        ImGui::Text("Current QAM: %d (restart to change)", type_QAM);
-        ImGui::EndChild();
-
-        if (ImGui::BeginTabBar("Tabs")) {
-            if (ImGui::BeginTabItem("Constellations")) {
-                int prev_idx = -1;
-               
-                ImGui::BeginChild("DispersionButtons", ImVec2(0, 100), true, ImGuiWindowFlags_HorizontalScrollbar);
-                ImGui::Text("Dispersion Buttons ");
-                int btn_width = 100;
-                int cols = std::max(1, (int)(ImGui::GetContentRegionAvail().x / (btn_width + 10)));
-                ImGui::Columns(cols, "DispColumns", false);
-                
-                for (int idx = 0; idx < (int)dispers.size(); ++idx) {
-                    // Формируем метку с кратким значением дисперсии
-                    char label[32];
-                    sprintf(label, "%.3f", dispers[idx]);
-                    if (ImGui::Button(label, ImVec2(btn_width, 30))) {
-                        prev_idx = disp_idx;    // запоминаем предыдущий индекс
-                        disp_idx = idx;         // устанавливаем новый
-                    }
-                    ImGui::NextColumn();
-                }
-                ImGui::Columns(1);
-                ImGui::EndChild();
-                ImGui::Text("Dispersion = %.4f", dispers[disp_idx]);
-
-                // Если индекс изменился, пересчитываем векторы зашумленного созвездия
-                if (prev_idx != disp_idx) {
-                    const auto& noisy = all_awgn[disp_idx];
-                    xs_noisy.assign(noisy.size(), 0);
-                    ys_noisy.assign(noisy.size(), 0);
-                    for (size_t i = 0; i < noisy.size(); ++i) {
-                        xs_noisy[i] = noisy[i].real();
-                        ys_noisy[i] = noisy[i].imag();
-                    }
-                }
-
-                float limit = 1.5f * sqrtf(float(type_QAM));
-                ImVec2 sz(dm.w * 0.45f, dm.h * 0.7f);
-
-                ImGui::BeginGroup();
-                ImGui::Text("Original");
-                if (ImPlot::BeginPlot("##orig", sz)) {
-                    ImPlot::SetupAxes("I","Q");
-                    ImPlot::SetupAxesLimits(-limit, limit, -limit, limit);
-                    ImPlot::PlotScatter("##orig", xs_orig.data(), ys_orig.data(), (int)xs_orig.size());
-                    ImPlot::EndPlot();
-                }
-                ImGui::EndGroup();
-                ImGui::SameLine();
-                ImGui::BeginGroup();
-                ImGui::Text("Noisy (disp = %.3f)", dispers[disp_idx]);
-                if (ImPlot::BeginPlot("##noisy", sz)) {
-                    ImPlot::SetupAxes("I","Q");
-                    ImPlot::SetupAxesLimits(-limit, limit, -limit, limit);
-                    if (!xs_noisy.empty())
-                        ImPlot::PlotScatter("##noisy", xs_noisy.data(), ys_noisy.data(), (int)xs_noisy.size());
-                    ImPlot::EndPlot();
-                }
-                ImGui::EndGroup();
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("BER")) {
-                if (ImPlot::BeginPlot("BER vs Dispersion", ImVec2(-1,-1))) {
-                    ImPlot::SetupAxes("Dispersion", "BER");
-                    ImPlot::SetupAxisFormat(ImAxis_Y1, "%.2f");
-                    ImPlot::PlotLine("BER", dispers.data(), ber.data(), (int)dispers.size());
-                    ImPlot::PlotScatter("BER", dispers.data(), ber.data(), (int)dispers.size());
-                    ImPlot::EndPlot();
-                }
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
-        }
-        ImGui::End();
-
-        ImGui::Render();
-        glClearColor(0.1f,0.1f,0.1f,1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        SDL_GL_SwapWindow(win);
-    }
-
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImPlot::DestroyContext();
-    ImGui::DestroyContext();
-    SDL_GL_DeleteContext(gl);
-    SDL_DestroyWindow(win);
-    SDL_Quit();
-}
-
-
 // std::vector<std::complex<float>> QAM_MAP(const std::vector<int>& array, int& type_QAM){
 //     std::vector<std::complex<float>> samples; 
 
@@ -316,7 +163,7 @@ int main() {
     {
         std::cout << bits[i] << " "  ;
     }
-
+    std::cout << std::endl;
 
     std::vector<std::complex<float>> symbols = QAM_gray(bits, type_QAM);
     std::cout << "QAM" << std::endl;
@@ -331,13 +178,9 @@ int main() {
     std::ofstream out("ber_results.csv");
     out << "dispers,errors,ber\n";
 
-    std::vector<float>BER(dispers.size());
-    std::vector<std::vector<std::complex<float>>> all_awgn(dispers.size());
-
     for ( int a = 0; a < dispers.size(); a++)
     {
         std::vector<std::complex<float>> signal_AWGN = AWGN(symbols, dispers[a]);
-        all_awgn[a] = signal_AWGN;
 
         std::vector<int> bitiks = QAM_demapper(signal_AWGN, type_QAM);
         int errors = 0;
@@ -354,13 +197,8 @@ int main() {
         std::cout << "значение дисперсии = " << dispers[a] << std::endl ;
         std::cout << "error bits = " << errors << std::endl << "ber = " << ber << std::endl ;
         out << dispers[a] << "," << errors << "," << ber << "\n";
-        BER[a] += ber;
-        
-    
+     
     }
     out.close();
-    
-    run_gui(symbols, all_awgn, dispers, BER, type_QAM);
-    
 
 }

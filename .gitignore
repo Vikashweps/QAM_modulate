@@ -1,9 +1,7 @@
-build/
 *.o
 *.exe
 *.out
 qam_mod
 ber_results.csv
-
 matplotlib_env/
-.DS_Store
+
