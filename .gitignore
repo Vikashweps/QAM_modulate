@@ -1,0 +1,9 @@
+build/
+*.o
+*.exe
+*.out
+qam_mod
+ber_results.csv
+*.png
+matplotlib_env/
+.DS_Store
