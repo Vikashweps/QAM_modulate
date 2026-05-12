@@ -7,72 +7,49 @@
 #include <fstream>
 #include <cmath>
 
-// std::vector<std::complex<float>> QAM_MAP(const std::vector<int>& array, int& type_QAM){
-//     std::vector<std::complex<float>> samples; 
 
-//     if (type_QAM == 4){
-//         for (size_t i = 0 ; i < (array.size()); i += 2) {
-//             std::complex <float> val;
-//             val =  std::complex<float>( ( (1/sqrt(2)) * (1 - 2*array[i]) ) ,  ( (1/sqrt(2)) * (1.0f* (1 - 2*array[i+1]) ) ) )  ;   
-//             samples.push_back(val);
-//         }
-//     }
+//использована модуляция инструкциям по 3gpp
 
-//     else if (type_QAM == 16){
-//         for (size_t i = 0 ; i < (array.size()); i += 4) {
-//             std::complex <float> val;
-//             float real = ( (1-2*array[i]) * (2 - (1 - 2*array[i+2]) ) )  / (sqrt(10)); 
-//             float image = 1.0f* ( (1-2*array[i+1]) * (2 - (1 - 2*array[i+3]) ) ) / (sqrt(10));
-//             val = std::complex<float>(real, image);
-//             samples.push_back(val);
-//         }
-//     }
-
-//     else if (type_QAM == 64){
-//         for (size_t i = 0 ; i < (array.size() ); i += 6) {
-//             std::complex <float> val;
-//             float real = ((1-2*array[i]) * (4*array[i+2] + 2*array[i+4] + 1) )  / (sqrt(42)); 
-//             float image = 1.0f* ((1-2*array[i+1]) * (4*array[i+3] + 2*array[i+5] + 1)) / (sqrt(42));
-//             val = std::complex<float>(real, image);
-//             samples.push_back(val);
-//         }
-//     }
-
-//     return samples;
-// }
-
-
-class QAM_grey {
-
-private:
-    int type_QAM;
-    int k;
-    float norm;
-    int bps;
-
+class QAM_modulate{
 public:
-    std::vector<std::complex<float>> map(const std::vector<bool>& bits, int M) {
-        int k = (int)(log2(M) / 2); 
-        int bps = 2*k;
-        float norm = sqrt(3.0/(2*(M-1)));
-        std::vector<std::complex<float>> sym(bits.size()/bps);
-        for(size_t i=0; i<sym.size(); ++i) {
-            int I=0, Q=0;
-            for(int b=0; b<k; ++b) {
-                I = (I<<1) | bits[i*bps + b];
-                Q = (Q<<1) | bits[i*bps + k + b];
+    std::vector<std::complex<float>> map(const std::vector<bool>& array, int& type_QAM){
+        std::vector<std::complex<float>> samples; 
+
+        if (type_QAM == 4){
+            for (size_t i = 0 ; i < (array.size()); i += 2) {
+                std::complex <float> val;
+                val =  std::complex<float>( ( (1/sqrt(2)) * (1 - 2*array[i]) ) ,  ( (1/sqrt(2)) * (1.0f* (1 - 2*array[i+1]) ) ) )  ;   
+                samples.push_back(val);
             }
-            int gI = I ^ (I>>1), gQ = Q ^ (Q>>1);
-            int amp = (1<<k)-1;
-            sym[i] = {(2.0f*gI - amp)*norm, (2.0f*gQ - amp)*norm};
         }
-        return sym;
-    }
+
+        else if (type_QAM == 16){
+            for (size_t i = 0 ; i < (array.size()); i += 4) {
+                std::complex <float> val;
+                float real = ( (1-2*array[i]) * (2 - (1 - 2*array[i+2]) ) )  / (sqrt(10)); 
+                float image = 1.0f* ( (1-2*array[i+1]) * (2 - (1 - 2*array[i+3]) ) ) / (sqrt(10));
+                val = std::complex<float>(real, image);
+                samples.push_back(val);
+            }
+        }
+
+        else if (type_QAM == 64){
+            for (size_t i = 0 ; i < (array.size() ); i += 6) {
+                std::complex <float> val;
+                float real = ((1-2*array[i]) * (4*array[i+2] + 2*array[i+4] + 1) )  / (sqrt(42)); 
+                float image = 1.0f* ((1-2*array[i+1]) * (4*array[i+3] + 2*array[i+5] + 1)) / (sqrt(42));
+                val = std::complex<float>(real, image);
+                samples.push_back(val);
+            }
+        }
+
+        return samples;
+}
 };
 
+
 class AWGN{
-   
-    public:
+public:
     std::vector <std::complex<float>> noise(const std::vector<std::complex<float>>& symbols, float dispers){
     std::vector <std::complex<float>> signal_AWGN(symbols.size());
     static std::random_device rd;
@@ -87,45 +64,71 @@ class AWGN{
 }
 };
 
-class QAM_demapper {
-private:
-    std::vector<std::complex<float>> symbols; 
-    int bps; 
-
+class QAM_demodulate {
 public:
-    QAM_demapper(int type_QAM) {
-        QAM_grey mapper;
-        bps = (type_QAM == 4) ? 2 : (type_QAM == 16) ? 4 : 6;
-
-        for (int i = 0; i < type_QAM; ++i) {
-            std::vector<bool> b(bps);
-            for (int j = 0; j < bps; ++j){
-                b[j] = (i >> (bps - 1 - j)) & 1;
-                }
-            symbols.push_back(mapper.map(b, type_QAM)[0]);
+    std::vector<bool> demodulate(const std::vector<std::complex<float>>& array, int type_QAM) {
+        std::vector<bool> bits(array.size() * (type_QAM == 4 ? 2 : type_QAM == 16 ? 4 : 6));
+        
+        if (type_QAM == 4) {
+            for (size_t i = 0; i < array.size(); i++) {
+                bits[i*2]   = array[i].real() < 0;
+                bits[i*2+1] = array[i].imag() < 0;
+            }
         }
-    }
-
-    std::vector<bool> demap(const std::vector<std::complex<float>>& rx) {
-        std::vector<bool> out_bits;
-
-        for (size_t idx = 0; idx < rx.size(); ++idx) {
-            int best_idx = 0;
-            float best_dist = std::norm(rx[idx] - symbols[0]);
-            for (size_t i = 1; i < symbols.size(); ++i) {
-                float dist = std::norm(rx[idx] - symbols[i]);
-                if (dist < best_dist) {
-                    best_dist = dist;
-                    best_idx = i;
+        else if (type_QAM == 16) {
+            float norm = std::sqrt(10.0f);
+            for (size_t i = 0; i < array.size(); i++) {
+                float re = array[i].real() * norm;
+                float im = array[i].imag() * norm;
+                
+                bits[i*4]   = re < 0;
+                bits[i*4+1] = im < 0;
+                bits[i*4+2] = (std::fabs(re) > 2);
+                bits[i*4+3] = (std::fabs(im) > 2);
+            }
+        }
+        else if (type_QAM == 64) {
+            
+            for (size_t i = 0; i < array.size(); i++) {
+                float re = array[i].real();
+                float im = array[i].imag();
+                
+                bits[i*6] = (re < 0);
+                
+                if ((re >  (6.0f / std::sqrt(42.0f))) || (re < - (6.0f / std::sqrt(42.0f)))) {
+                    bits[i*6+2] = 1;
+                    bits[i*6+4] = 1;
+                } else if ((re > (4.0f / std::sqrt(42.0f))) || (re < -(4.0f / std::sqrt(42.0f)))) {
+                    bits[i*6+2] = 1;
+                    bits[i*6+4] = 0;
+                } else if ((re > (2.0f / std::sqrt(42.0f))) || (re < -(2.0f / std::sqrt(42.0f)))) {
+                    bits[i*6+2] = 0;
+                    bits[i*6+4] = 0;
+                } else {
+                    bits[i*6+2] = 0;
+                    bits[i*6+4] = 1;
+                }
+                
+                bits[i*6+1] = (im < 0);
+                
+                if ((im >  (6.0f / std::sqrt(42.0f))) || (im < - (6.0f / std::sqrt(42.0f)))) {
+                    bits[i*6+3] = 1;
+                    bits[i*6+5] = 1;
+                } else if ((im > (4.0f / std::sqrt(42.0f))) || (im < -(4.0f / std::sqrt(42.0f)))) {
+                    bits[i*6+3] = 1;
+                    bits[i*6+5] = 0;
+                } else if ((im > (2.0f / std::sqrt(42.0f))) || (im < -(2.0f / std::sqrt(42.0f)))) {
+                    bits[i*6+3] = 0;
+                    bits[i*6+5] = 0;
+                } else {
+                    bits[i*6+3] = 0;
+                    bits[i*6+5] = 1;
                 }
             }
-            for (int j = 0; j < bps; ++j)
-                out_bits.push_back((best_idx >> (bps - 1 - j)) & 1);
         }
-        return out_bits;
+        return bits;
     }
 };
-
 
 int main() {
 
@@ -153,9 +156,9 @@ int main() {
     }
     std::cout << std::endl;
 
-    QAM_grey map;
+    QAM_modulate map;
     AWGN noise;            
-    QAM_demapper demap(type_QAM);
+    QAM_demodulate demap;
 
     std::vector<std::complex<float>> symbols = map.map(bits, type_QAM);
     std::cout << "QAM" << std::endl;
@@ -173,7 +176,7 @@ int main() {
     for ( int a = 0; a < dispers.size(); a++)
     {
         std::vector<std::complex<float>> noise_signal = noise.noise(symbols, dispers[a]);
-        std::vector<bool> decoded_bits = demap.demap(noise_signal);
+        std::vector<bool> decoded_bits = demap.demodulate(noise_signal, type_QAM);
         int errors = 0;
         for(size_t i = 0; i < bits.size(); i++) 
         {
