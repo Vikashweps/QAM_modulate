@@ -15,17 +15,11 @@
 
 |── qam_mod.cpp &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # Основной код (модулятор, демодулятор, AWGN, GUI)
 
-|── CMakeLists.txt &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # Файл сборки CMake
-
-|── third_party/  &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # Внешние библиотеки для отрисовки графиков
-
 |── plot.py  &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # Скрипт для построения графика BER по файлу ber_results.csv
-
 
 |── ber_results.csv      &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # Результаты BER (генерируется при запуске)
 
 ── image           &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # Графики
-
 
 
 

@@ -42,40 +42,42 @@
 // }
 
 
+class QAM_grey {
 
-std::vector<std::complex<float>> QAM_gray(const std::vector<int>& array, int& type_QAM) {
-    int k = 0;
-    switch (type_QAM) {
-        case 4:  k = 1; break;
-        case 16: k = 2; break;
-        case 64: k = 3; break;
-        default: k = 0;
-    }
-    
-    float norm = std::sqrt(3.0f / (2.0f * (type_QAM - 1)));
-    int bps = 2 * k;
-    std::vector<std::complex<float>> samples_grei(array.size() / bps);
+private:
+    int type_QAM;
+    int k;
+    float norm;
+    int bps;
 
-    for (size_t i = 0; i < samples_grei.size(); ++i) {
-        int I = 0, Q = 0;
-        for (int b = 0; b < k; ++b) {
-            I = (I << 1) | array[i * bps + b];
-            Q = (Q << 1) | array[i * bps + k + b];
+public:
+    std::vector<std::complex<float>> map(const std::vector<bool>& bits, int M) {
+        int k = (int)(log2(M) / 2); 
+        int bps = 2*k;
+        float norm = sqrt(3.0/(2*(M-1)));
+        std::vector<std::complex<float>> sym(bits.size()/bps);
+        for(size_t i=0; i<sym.size(); ++i) {
+            int I=0, Q=0;
+            for(int b=0; b<k; ++b) {
+                I = (I<<1) | bits[i*bps + b];
+                Q = (Q<<1) | bits[i*bps + k + b];
+            }
+            int gI = I ^ (I>>1), gQ = Q ^ (Q>>1);
+            int amp = (1<<k)-1;
+            sym[i] = {(2.0f*gI - amp)*norm, (2.0f*gQ - amp)*norm};
         }
-        int gI = I ^ (I >> 1);
-        int gQ = Q ^ (Q >> 1);
-        float amp = (1 << k) - 1;
-        samples_grei[i] = { (2.0f * gI - amp) * norm, (2.0f * gQ - amp) * norm };
+        return sym;
     }
-    return samples_grei;
-}
+};
 
-std::vector<std::complex<float>> AWGN(const std::vector<std::complex<float>>& symbols, float dispers){
+class AWGN{
+   
+    public:
+    std::vector <std::complex<float>> noise(const std::vector<std::complex<float>>& symbols, float dispers){
     std::vector <std::complex<float>> signal_AWGN(symbols.size());
-    float sigma = sqrtf(dispers);
     static std::random_device rd;
     static std::mt19937 gen(rd());
-    std::normal_distribution<float> dist(0.0f, sigma);
+    std::normal_distribution<float> dist(0.0f,  sqrtf(dispers));
     
     for (size_t i = 0 ; i < symbols.size(); i ++) {
         signal_AWGN[i] = symbols[i] + std::complex<float>(dist(gen), dist(gen));
@@ -83,78 +85,64 @@ std::vector<std::complex<float>> AWGN(const std::vector<std::complex<float>>& sy
 
     return signal_AWGN;
 }
+};
 
+class QAM_demapper {
+private:
+    std::vector<std::complex<float>> symbols; 
+    int bps; 
 
-std::vector<int> QAM_demapper(const std::vector<std::complex<float>>& symbols, int& type_QAM) {
-    int k = 0;
-    switch (type_QAM) {
-        case 4:  k = 1; break;
-        case 16: k = 2; break;
-        case 64: k = 3; break;
-        default: k = 0;
-    }
-    float norm = std::sqrt(3.0f / (2.0f * (type_QAM - 1)));
-    int amp = (1 << k) - 1;
-    int bps = 2 * k;
-    std::vector<int> bits(symbols.size() * bps);
-    
-    // Таблицы преобразования Грея -> двоичный
-    static const int gray2bin[3][8] = {
-        {0, 1},                   // k=1
-        {0, 1, 3, 2},            // k=2
-        {0, 1, 3, 2, 6, 7, 5, 4} // k=3
-    };
-    
-    for (size_t i = 0; i < symbols.size(); ++i) {
-        float re = symbols[i].real() / norm;
-        float im = symbols[i].imag() / norm;
-        
-        int levI = (int)(re + (re >= 0 ? 0.5f : -0.5f));
-        int levQ = (int)(im + (im >= 0 ? 0.5f : -0.5f));
-        
-        // Насыщение
-        levI = std::max(-amp, std::min(amp, levI));
-        levQ = std::max(-amp, std::min(amp, levQ));
-        
-        int gI = (levI + amp) / 2;
-        int gQ = (levQ + amp) / 2;
-        
-        int bI = gray2bin[k-1][gI];
-        int bQ = gray2bin[k-1][gQ];
-        
-        int base = i * bps;
-        for (int b = 0; b < k; ++b) {
-            bits[base + b]       = (bI >> (k - 1 - b)) & 1;
-            bits[base + k + b]   = (bQ >> (k - 1 - b)) & 1;
+public:
+    QAM_demapper(int type_QAM) {
+        QAM_grey mapper;
+        bps = (type_QAM == 4) ? 2 : (type_QAM == 16) ? 4 : 6;
+
+        for (int i = 0; i < type_QAM; ++i) {
+            std::vector<bool> b(bps);
+            for (int j = 0; j < bps; ++j){
+                b[j] = (i >> (bps - 1 - j)) & 1;
+                }
+            symbols.push_back(mapper.map(b, type_QAM)[0]);
         }
     }
-    return bits;
-}
+
+    std::vector<bool> demap(const std::vector<std::complex<float>>& rx) {
+        std::vector<bool> out_bits;
+
+        for (size_t idx = 0; idx < rx.size(); ++idx) {
+            int best_idx = 0;
+            float best_dist = std::norm(rx[idx] - symbols[0]);
+            for (size_t i = 1; i < symbols.size(); ++i) {
+                float dist = std::norm(rx[idx] - symbols[i]);
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    best_idx = i;
+                }
+            }
+            for (int j = 0; j < bps; ++j)
+                out_bits.push_back((best_idx >> (bps - 1 - j)) & 1);
+        }
+        return out_bits;
+    }
+};
 
 
 int main() {
 
-    std::cout << "write type QAM (4 - QPSK, 16 - QAM16, 64 - QAM64) = "  << std::endl;
     int type_QAM;
+    std::cout << "write type QAM (4 - QPSK, 16 - QAM16, 64 - QAM64) = "  << std::endl;
     std::cin >> type_QAM;
-
-    if (type_QAM != 4 && type_QAM != 16 && type_QAM != 64) {
+    while (type_QAM != 4 && type_QAM != 16 && type_QAM != 64) {
         std::cerr << "Ошибка: допустимы только 4, 16, 64\n";
         std::cin >> type_QAM;
     }
 
-    int bps = 0;
-    switch(type_QAM) {
-        case 4:  bps = 2; break;
-        case 16: bps = 4; break;
-        case 64: bps = 6; break;
-    }
-    int num_symbols = 10000;
-    int N = num_symbols * bps;
-   
-    std::vector<int> bits(N);
-    srand(time(NULL));  
 
+    int bps = (type_QAM==4?2:type_QAM==16?4:6);
+    int N = 1000 * bps;
+   
+    std::vector<bool> bits(N);
+    srand(time(NULL));  
     for (int i = 0; i < bits.size(); i++) {
         bits[i] = rand() % 2;  
     }
@@ -165,7 +153,11 @@ int main() {
     }
     std::cout << std::endl;
 
-    std::vector<std::complex<float>> symbols = QAM_gray(bits, type_QAM);
+    QAM_grey map;
+    AWGN noise;            
+    QAM_demapper demap(type_QAM);
+
+    std::vector<std::complex<float>> symbols = map.map(bits, type_QAM);
     std::cout << "QAM" << std::endl;
     for(size_t i = 0; i < 10; i++) 
     {
@@ -180,13 +172,12 @@ int main() {
 
     for ( int a = 0; a < dispers.size(); a++)
     {
-        std::vector<std::complex<float>> signal_AWGN = AWGN(symbols, dispers[a]);
-
-        std::vector<int> bitiks = QAM_demapper(signal_AWGN, type_QAM);
+        std::vector<std::complex<float>> noise_signal = noise.noise(symbols, dispers[a]);
+        std::vector<bool> decoded_bits = demap.demap(noise_signal);
         int errors = 0;
         for(size_t i = 0; i < bits.size(); i++) 
         {
-            if (  bitiks[i] != bits[i] ) 
+            if ( decoded_bits[i] != bits[i] ) 
             { 
                 errors += 1;
             } 
@@ -197,8 +188,8 @@ int main() {
         std::cout << "значение дисперсии = " << dispers[a] << std::endl ;
         std::cout << "error bits = " << errors << std::endl << "ber = " << ber << std::endl ;
         out << dispers[a] << "," << errors << "," << ber << "\n";
-     
     }
+
     out.close();
 
 }
