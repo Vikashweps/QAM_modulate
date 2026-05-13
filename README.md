@@ -13,7 +13,7 @@
 
 ## Структура проекта 
 
-|── qam_mod.cpp &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # Основной код (модулятор, демодулятор, AWGN, GUI)
+|── qam_mod.cpp &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # Основной код (модулятор, демодулятор, AWGN)
 
 |── plot.py  &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; # Скрипт для построения графика BER по файлу ber_results.csv
 

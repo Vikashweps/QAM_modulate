@@ -8,8 +8,7 @@
 #include <cmath>
 
 
-//использована модуляция инструкциям по 3gpp
-
+//использована модуляция по инструкциям 3gpp (Specification # 38.883)
 class QAM_modulate{
 public:
     std::vector<std::complex<float>> map(const std::vector<bool>& array, int& type_QAM){
